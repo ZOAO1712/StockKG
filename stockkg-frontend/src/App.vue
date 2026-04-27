@@ -1,5 +1,7 @@
 <template>
-  <div class="app-shell">
+  <RouterView v-if="route.meta.authPage" />
+
+  <div v-else class="app-shell">
     <aside class="sidebar">
       <div>
         <div class="brand-card">
@@ -19,13 +21,26 @@
             <span>图谱探索</span>
             <small>Knowledge Graph</small>
           </RouterLink>
+          <RouterLink class="nav-item" to="/finance">
+            <span>财经资讯</span>
+            <small>Finance</small>
+          </RouterLink>
+          <RouterLink class="nav-item" to="/manage">
+            <span>{{ authStore.isAdmin ? '后台管理' : '通知中心' }}</span>
+            <small>{{ authStore.isAdmin ? 'Admin Notice' : 'Notice Inbox' }}</small>
+          </RouterLink>
+          <RouterLink class="nav-item" to="/ai">
+            <span>DeepSeek 助手</span>
+            <small>DeepSeek</small>
+          </RouterLink>
         </nav>
       </div>
 
       <div class="sidebar-footer">
         <div class="tip-card">
-          <strong>推荐扩展</strong>
-          <p>后续可以直接接 Neo4j、GraphQL 或后端接口，把 mock 数据替换为真实图谱数据。</p>
+          <strong>当前用户</strong>
+          <p>{{ authStore.user?.username || '未登录' }} · {{ roleLabel }}</p>
+          <button class="logout-button" type="button" @click="handleLogout">退出登录</button>
         </div>
       </div>
     </aside>
@@ -38,7 +53,7 @@
         </div>
         <div class="header-actions">
           <span class="status-dot"></span>
-          <span>项目结构已适配 Vue 3 单页应用</span>
+          <span>已登录：{{ authStore.user?.username || '用户' }} · {{ roleLabel }}</span>
         </div>
       </header>
 
@@ -50,7 +65,24 @@
 </template>
 
 <script setup>
-import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { computed } from 'vue'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
+
+const roleLabelMap = {
+  ADMIN: '管理员',
+  USER: '普通用户',
+  GUEST: '访客',
+}
+
+const roleLabel = computed(() => roleLabelMap[authStore.role] || authStore.role || '-')
+
+function handleLogout() {
+  authStore.logout()
+  router.replace('/login')
+}
 </script>

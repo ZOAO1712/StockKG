@@ -1,6 +1,24 @@
-<html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>stockkg-backend</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 40px; line-height: 1.8; }
+        code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; }
+    </style>
+</head>
 <body>
-<h1>hello word!!!</h1>
-<p>this is a html page</p>
+<h2>股票知识图谱后端服务已启动</h2>
+<p>建议测试接口：</p>
+<ul>
+    <li><code>GET /api/system/health</code></li>
+    <li><code>POST /api/auth/login</code></li>
+    <li><code>GET /api/dashboard/overview</code></li>
+    <li><code>GET /api/graph/stock/600519</code></li>
+    <li><code>GET /api/graph/stock/search?keyword=茅台</code></li>
+    <li><code>POST /api/qa/ask</code></li>
+    <li><code>POST /api/admin/knowledge</code></li>
+</ul>
 </body>
 </html>

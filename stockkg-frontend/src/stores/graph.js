@@ -1,29 +1,128 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { categoryColors, graphData } from '@/mock/graphData'
+import { getStockGraph } from '@/api/graph'
+
+const categoryColors = {
+  股票: '#5b8ff9',
+  公司: '#7f8c8d',
+  行业: '#5ad8a6',
+  概念: '#f6bd16',
+  交易所: '#6dc8ec',
+  地区: '#13c2c2',
+  人物: '#ff9d4d',
+  行情指标: '#9270ca',
+  知识点: '#9270ca',
+  指标: '#9270ca',
+  事件: '#ff9d4d',
+  风险: '#f4664a',
+  策略: '#6dc8ec',
+  其他: '#94a3b8',
+}
+
+const categoryMap = {
+  Stock: '股票',
+  Company: '公司',
+  Industry: '行业',
+  Concept: '概念',
+  Exchange: '交易所',
+  Area: '地区',
+  Person: '人物',
+  MarketMetric: '行情指标',
+  KnowledgePoint: '知识点',
+  FinancialIndicator: '指标',
+  TechnicalIndicator: '指标',
+  FinanceMetric: '指标',
+  TechnicalMetric: '指标',
+  Event: '事件',
+  Risk: '风险',
+  Strategy: '策略',
+}
+
+const relationMap = {
+  BELONGS_TO: '属于行业',
+  BELONGS_TO_INDUSTRY: '属于行业',
+  HAS_CONCEPT: '关联概念',
+  RELATED_TO: '关联概念',
+  RELATED_TO_TECHNICAL_INDICATOR: '技术指标',
+  RELATED_TO_FINANCIAL_INDICATOR: '财务指标',
+  CORRESPONDS_TO: '对应公司',
+  LISTED_ON: '上市于',
+  LOCATED_IN: '位于地区',
+  HAS_MANAGER: '管理人员',
+  HAS_MARKET_METRIC: '行情指标',
+  HAS_RISK: '存在风险',
+}
+
+function normalizeCategory(category) {
+  return categoryMap[category] || category || '其他'
+}
+
+function normalizeRelation(label) {
+  return relationMap[label] || label || '关联'
+}
+
+function normalizeNode(node) {
+  const rawMetrics = node.metrics || {}
+  const metrics = { ...rawMetrics }
+  const category = normalizeCategory(node.category)
+
+  const description = node.description || rawMetrics.description || ''
+  const level = node.level || rawMetrics.level || ''
+  const score = Number(node.score ?? rawMetrics.score ?? 0)
+  const symbol = node.symbol || rawMetrics.symbol || rawMetrics.code || (category === '股票' ? String(node.id).replace(/^stock_/, '') : '')
+
+  delete metrics.description
+  delete metrics.level
+  delete metrics.score
+  delete metrics.symbol
+  delete metrics.code
+
+  return {
+    id: String(node.id),
+    label: node.label || node.name || String(node.id),
+    category,
+    metrics,
+    description,
+    level,
+    symbol,
+    score,
+  }
+}
+
+function normalizeEdge(edge) {
+  return {
+    source: String(edge.source),
+    target: String(edge.target),
+    label: normalizeRelation(edge.label),
+    rawLabel: edge.label || '',
+  }
+}
 
 export const useGraphStore = defineStore('graph', () => {
-  const rawNodes = ref(graphData.nodes)
-  const rawEdges = ref(graphData.edges)
-  const selectedNodeId = ref(graphData.nodes[0]?.id || '')
+  const rawNodes = ref([])
+  const rawEdges = ref([])
+  const selectedNodeId = ref('')
   const keyword = ref('')
-  const enabledCategories = ref(Object.keys(categoryColors))
+  const enabledCategories = ref([])
+  const loading = ref(false)
+  const error = ref('')
 
-  const categoryList = computed(() =>
-    Object.keys(categoryColors).map((key) => ({
+  const categoryList = computed(() => {
+    const categories = [...new Set(rawNodes.value.map((node) => node.category))]
+    return categories.map((key) => ({
       key,
-      color: categoryColors[key],
+      color: categoryColors[key] || categoryColors['其他'],
       count: rawNodes.value.filter((node) => node.category === key).length,
-    })),
-  )
+    }))
+  })
 
   const stats = computed(() => {
     const totalNodes = rawNodes.value.length
     const totalEdges = rawEdges.value.length
     const totalCategories = categoryList.value.length
-    const avgScore = Math.round(
-      rawNodes.value.reduce((sum, node) => sum + (node.score || 0), 0) / totalNodes,
-    )
+    const avgScore = totalNodes
+        ? Math.round(rawNodes.value.reduce((sum, node) => sum + (node.score || 0), 0) / totalNodes)
+        : 0
 
     return {
       totalNodes,
@@ -33,12 +132,14 @@ export const useGraphStore = defineStore('graph', () => {
     }
   })
 
-  const selectedNode = computed(() => rawNodes.value.find((node) => node.id === selectedNodeId.value))
+  const selectedNode = computed(() =>
+      rawNodes.value.find((node) => node.id === selectedNodeId.value),
+  )
 
   const filteredGraph = computed(() => {
     const search = keyword.value.trim().toLowerCase()
     const visibleBaseNodes = rawNodes.value.filter((node) =>
-      enabledCategories.value.includes(node.category),
+        enabledCategories.value.includes(node.category),
     )
 
     if (!search) {
@@ -46,19 +147,25 @@ export const useGraphStore = defineStore('graph', () => {
       return {
         nodes: visibleBaseNodes,
         edges: rawEdges.value.filter(
-          (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target),
+            (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target),
         ),
       }
     }
 
     const matchedIds = new Set(
-      visibleBaseNodes
-        .filter((node) => {
-          return [node.label, node.category, node.description, node.symbol]
-            .filter(Boolean)
-            .some((text) => String(text).toLowerCase().includes(search))
-        })
-        .map((node) => node.id),
+        visibleBaseNodes
+            .filter((node) =>
+                [
+                  node.label,
+                  node.category,
+                  node.description,
+                  node.symbol,
+                  ...Object.values(node.metrics || {}),
+                ]
+                    .filter(Boolean)
+                    .some((text) => String(text).toLowerCase().includes(search)),
+            )
+            .map((node) => node.id),
     )
 
     rawEdges.value.forEach((edge) => {
@@ -73,7 +180,9 @@ export const useGraphStore = defineStore('graph', () => {
 
     return {
       nodes,
-      edges: rawEdges.value.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
+      edges: rawEdges.value.filter(
+          (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target),
+      ),
     }
   })
 
@@ -89,10 +198,36 @@ export const useGraphStore = defineStore('graph', () => {
 
   const hotNodes = computed(() => {
     return [...rawNodes.value]
-      .map((node) => ({ ...node, degree: degreeMap.value.get(node.id) || 0 }))
-      .sort((a, b) => b.degree - a.degree || b.score - a.score)
-      .slice(0, 6)
+        .map((node) => ({ ...node, degree: degreeMap.value.get(node.id) || 0 }))
+        .sort((a, b) => b.degree - a.degree || b.score - a.score)
+        .slice(0, 6)
   })
+
+  async function fetchGraph(code = '600519') {
+    loading.value = true
+    error.value = ''
+
+    try {
+      const payload = await getStockGraph(code)
+
+      const nodes = (payload.nodes || []).map(normalizeNode)
+      const edges = (payload.edges || []).map(normalizeEdge)
+
+      rawNodes.value = nodes
+      rawEdges.value = edges
+      selectedNodeId.value = nodes[0]?.id || ''
+      enabledCategories.value = [...new Set(nodes.map((node) => node.category))]
+    } catch (err) {
+      console.error('加载图谱失败', err)
+      error.value = err?.response?.data?.message || err?.message || '加载图谱失败'
+      rawNodes.value = []
+      rawEdges.value = []
+      selectedNodeId.value = ''
+      enabledCategories.value = []
+    } finally {
+      loading.value = false
+    }
+  }
 
   function selectNode(nodeId) {
     selectedNodeId.value = nodeId
@@ -115,7 +250,7 @@ export const useGraphStore = defineStore('graph', () => {
 
   function resetFilters() {
     keyword.value = ''
-    enabledCategories.value = Object.keys(categoryColors)
+    enabledCategories.value = [...new Set(rawNodes.value.map((node) => node.category))]
   }
 
   return {
@@ -129,6 +264,9 @@ export const useGraphStore = defineStore('graph', () => {
     stats,
     filteredGraph,
     hotNodes,
+    loading,
+    error,
+    fetchGraph,
     selectNode,
     setKeyword,
     toggleCategory,
